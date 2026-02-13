@@ -39,20 +39,38 @@ jobs:
             exit 1
           fi
 
-          PERF=$(echo "$RESULT" | jq '(.lighthouseResult.categories.performance.score // 0) * 100 | round')
-          A11Y=$(echo "$RESULT" | jq '(.lighthouseResult.categories.accessibility.score // 0) * 100 | round')
-          BP=$(echo "$RESULT" | jq '(.lighthouseResult.categories["best-practices"].score // 0) * 100 | round')
-          SEO=$(echo "$RESULT" | jq '(.lighthouseResult.categories.seo.score // 0) * 100 | round')
+          PERF=$(echo "$RESULT" | jq '.lighthouseResult.categories.performance.score // empty | . * 100 | round')
+          A11Y=$(echo "$RESULT" | jq '.lighthouseResult.categories.accessibility.score // empty | . * 100 | round')
+          BP=$(echo "$RESULT" | jq '.lighthouseResult.categories["best-practices"].score // empty | . * 100 | round')
+          SEO=$(echo "$RESULT" | jq '.lighthouseResult.categories.seo.score // empty | . * 100 | round')
 
           echo "Performance: $PERF | Accessibility: $A11Y | Best Practices: $BP | SEO: $SEO"
 
-          echo "perf=$PERF" >> "$GITHUB_OUTPUT"
-          echo "a11y=$A11Y" >> "$GITHUB_OUTPUT"
-          echo "bp=$BP" >> "$GITHUB_OUTPUT"
-          echo "seo=$SEO" >> "$GITHUB_OUTPUT"
+          if [ -z "$PERF" ] && [ -z "$A11Y" ] && [ -z "$BP" ] && [ -z "$SEO" ]; then
+            echo "error=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "perf=${PERF:-0}" >> "$GITHUB_OUTPUT"
+            echo "a11y=${A11Y:-0}" >> "$GITHUB_OUTPUT"
+            echo "bp=${BP:-0}" >> "$GITHUB_OUTPUT"
+            echo "seo=${SEO:-0}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Write error to public config
+        if: steps.check.outputs.enabled == 'true' && steps.psi.outputs.error == 'true'
+        run: |
+          NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          PAYLOAD=$(jq -n --arg lastRun "$NOW" \
+            '{ psi: { enabled: true, lastRun: $lastRun, error: "Lighthouse returned no scores" } }')
+
+          curl -sL -o /dev/null -w "%{http_code}" \
+            -X POST "https://admin.hlx.page/config/usman-khalid/sites/da-playground/public.json" \
+            -H "content-type: application/json" \
+            -H "x-auth-token: ${{ secrets.AEM_ADMIN_API_KEY }}" \
+            --data "$PAYLOAD"
+          echo "::warning::Lighthouse returned no scores. Error saved to public config."
 
       - name: Write scores to public config
-        if: steps.check.outputs.enabled == 'true' && steps.psi.outputs.perf != 'null'
+        if: steps.check.outputs.enabled == 'true' && steps.psi.outputs.error != 'true'
         run: |
           NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           PAYLOAD=$(jq -n \
@@ -61,7 +79,7 @@ jobs:
             --argjson bp "${{ steps.psi.outputs.bp }}" \
             --argjson seo "${{ steps.psi.outputs.seo }}" \
             --arg lastRun "$NOW" \
-            '{ psi: { enabled: true, lastRun: $lastRun, scores: { performance: $perf, accessibility: $a11y, "best-practices": $bp, seo: $seo } } }')
+            '{ psi: { enabled: true, lastRun: $lastRun, error: null, scores: { performance: $perf, accessibility: $a11y, "best-practices": $bp, seo: $seo } } }')
 
           HTTP_CODE=$(curl -sL -o /dev/null -w "%{http_code}" \
             -X POST "https://admin.hlx.page/config/usman-khalid/sites/da-playground/public.json" \
