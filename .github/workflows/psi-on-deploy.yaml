@@ -12,7 +12,7 @@ jobs:
         id: check
         run: |
           CONFIG=$(curl -sf "https://main--da-playground--usman-khalid.aem.live/config.json" || echo '{}')
-          ENABLED=$(echo "$CONFIG" | jq -r '.psi.enabled // false')
+          ENABLED=$(echo "$CONFIG" | jq -r '.public.psi.enabled // false')
           echo "enabled=$ENABLED" >> "$GITHUB_OUTPUT"
           [ "$ENABLED" = "true" ] && echo "PSI monitoring is enabled." || echo "PSI monitoring is not enabled. Skipping."
 
