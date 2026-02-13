@@ -39,10 +39,10 @@ jobs:
             exit 1
           fi
 
-          PERF=$(echo "$RESULT" | jq '.lighthouseResult.categories.performance.score * 100 | round')
-          A11Y=$(echo "$RESULT" | jq '.lighthouseResult.categories.accessibility.score * 100 | round')
-          BP=$(echo "$RESULT" | jq '.lighthouseResult.categories["best-practices"].score * 100 | round')
-          SEO=$(echo "$RESULT" | jq '.lighthouseResult.categories.seo.score * 100 | round')
+          PERF=$(echo "$RESULT" | jq '(.lighthouseResult.categories.performance.score // 0) * 100 | round')
+          A11Y=$(echo "$RESULT" | jq '(.lighthouseResult.categories.accessibility.score // 0) * 100 | round')
+          BP=$(echo "$RESULT" | jq '(.lighthouseResult.categories["best-practices"].score // 0) * 100 | round')
+          SEO=$(echo "$RESULT" | jq '(.lighthouseResult.categories.seo.score // 0) * 100 | round')
 
           echo "Performance: $PERF | Accessibility: $A11Y | Best Practices: $BP | SEO: $SEO"
 
