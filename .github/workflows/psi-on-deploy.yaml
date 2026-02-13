@@ -7,14 +7,11 @@ on:
 jobs:
   psi:
     runs-on: ubuntu-latest
-    env:
-      AEM_ORG: ${{ vars.AEM_ORG }}
-      AEM_SITE: ${{ vars.AEM_SITE }}
     steps:
       - name: Check if PSI monitoring is enabled
         id: check
         run: |
-          CONFIG=$(curl -sf "https://main--${AEM_SITE}--${AEM_ORG}.aem.live/config.json" || echo '{}')
+          CONFIG=$(curl -sf "https://main--da-playground--usman-khalid.aem.live/config.json" || echo '{}')
           ENABLED=$(echo "$CONFIG" | jq -r '.psi.enabled // false')
           echo "enabled=$ENABLED" >> "$GITHUB_OUTPUT"
           [ "$ENABLED" = "true" ] && echo "PSI monitoring is enabled." || echo "PSI monitoring is not enabled. Skipping."
@@ -27,13 +24,13 @@ jobs:
         if: steps.check.outputs.enabled == 'true'
         id: psi
         run: |
-          SITE_URL="https://main--${AEM_SITE}--${AEM_ORG}.aem.live/"
+          SITE_URL="https://main--da-playground--usman-khalid.aem.live/"
           ENCODED_URL=$(printf '%s' "$SITE_URL" | jq -sRr @uri)
           echo "Testing: $SITE_URL"
 
           RESULT=$(curl -sf \
             -H "x-auth-token: ${{ secrets.AEM_ADMIN_API_KEY }}" \
-            "https://admin.hlx.page/psi/${AEM_ORG}/${AEM_SITE}/main?url=${ENCODED_URL}")
+            "https://admin.hlx.page/psi/usman-khalid/da-playground/main?url=${ENCODED_URL}")
 
           if [ -z "$RESULT" ]; then
             echo "::error::PSI request failed."
@@ -65,7 +62,7 @@ jobs:
             '{ psi: { enabled: true, lastRun: $lastRun, scores: { performance: $perf, accessibility: $a11y, "best-practices": $bp, seo: $seo } } }')
 
           HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            -X POST "https://admin.hlx.page/config/${AEM_ORG}/sites/${AEM_SITE}/public.json" \
+            -X POST "https://admin.hlx.page/config/usman-khalid/sites/da-playground/public.json" \
             -H "content-type: application/json" \
             -H "x-auth-token: ${{ secrets.AEM_ADMIN_API_KEY }}" \
             --data "$PAYLOAD")
