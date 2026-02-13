@@ -59,10 +59,16 @@ jobs:
         if: steps.check.outputs.enabled == 'true' && steps.psi.outputs.error == 'true'
         run: |
           NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          PAYLOAD=$(jq -n --arg lastRun "$NOW" \
-            '{ psi: { enabled: true, lastRun: $lastRun, error: "Lighthouse returned no scores" } }')
+          NOW_MS=$(date -u +%s)000
+          CONFIG=$(curl -sf "https://main--da-playground--usman-khalid.aem.live/config.json" || echo '{}')
+          PREV_HISTORY=$(echo "$CONFIG" | jq '.public.psi.history // []')
 
-          curl -sL -o /dev/null -w "%{http_code}" \
+          PAYLOAD=$(jq -n \
+            --arg lastRun "$NOW" \
+            --argjson history "$PREV_HISTORY" \
+            '{ psi: { enabled: true, lastRun: $lastRun, error: "Lighthouse returned no scores", history: $history } }')
+
+          curl -sL -o /dev/null \
             -X POST "https://admin.hlx.page/config/usman-khalid/sites/da-playground/public.json" \
             -H "content-type: application/json" \
             -H "x-auth-token: ${{ secrets.AEM_ADMIN_API_KEY }}" \
@@ -73,13 +79,28 @@ jobs:
         if: steps.check.outputs.enabled == 'true' && steps.psi.outputs.error != 'true'
         run: |
           NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          NOW_MS=$(date -u +%s)000
+          CONFIG=$(curl -sf "https://main--da-playground--usman-khalid.aem.live/config.json" || echo '{}')
+          PREV_HISTORY=$(echo "$CONFIG" | jq '.public.psi.history // []')
+
+          NEW_ENTRY=$(jq -n \
+            --argjson ts "$NOW_MS" \
+            --argjson perf "${{ steps.psi.outputs.perf }}" \
+            --argjson a11y "${{ steps.psi.outputs.a11y }}" \
+            --argjson bp "${{ steps.psi.outputs.bp }}" \
+            --argjson seo "${{ steps.psi.outputs.seo }}" \
+            '{ timestamp: $ts, scores: { performance: $perf, accessibility: $a11y, "best-practices": $bp, seo: $seo } }')
+
+          HISTORY=$(echo "$PREV_HISTORY" | jq --argjson entry "$NEW_ENTRY" '[$entry] + . | .[0:20]')
+
           PAYLOAD=$(jq -n \
             --argjson perf "${{ steps.psi.outputs.perf }}" \
             --argjson a11y "${{ steps.psi.outputs.a11y }}" \
             --argjson bp "${{ steps.psi.outputs.bp }}" \
             --argjson seo "${{ steps.psi.outputs.seo }}" \
             --arg lastRun "$NOW" \
-            '{ psi: { enabled: true, lastRun: $lastRun, error: null, scores: { performance: $perf, accessibility: $a11y, "best-practices": $bp, seo: $seo } } }')
+            --argjson history "$HISTORY" \
+            '{ psi: { enabled: true, lastRun: $lastRun, error: null, scores: { performance: $perf, accessibility: $a11y, "best-practices": $bp, seo: $seo }, history: $history } }')
 
           HTTP_CODE=$(curl -sL -o /dev/null -w "%{http_code}" \
             -X POST "https://admin.hlx.page/config/usman-khalid/sites/da-playground/public.json" \
