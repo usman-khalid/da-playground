@@ -7,13 +7,26 @@ on:
 jobs:
   psi:
     runs-on: ubuntu-latest
+    env:
+      AEM_ORG: ${{ vars.AEM_ORG }}
+      AEM_SITE: ${{ vars.AEM_SITE }}
     steps:
       - name: Check if PSI monitoring is enabled
         id: check
         run: |
-          CONFIG=$(curl -s "https://main--${{ vars.AEM_SITE }}--${{ vars.AEM_ORG }}.aem.live/config.json" 2>/dev/null || echo "{}")
-          ENABLED=$(echo "$CONFIG" | jq -r '.psi.enabled // false')
+          RESPONSE=$(curl -s -w "\n%{http_code}" "https://main--${AEM_SITE}--${AEM_ORG}.aem.live/config.json")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "No config found (HTTP $HTTP_CODE). Skipping."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          ENABLED=$(echo "$BODY" | jq -r '.psi.enabled // false' 2>/dev/null || echo "false")
           echo "enabled=$ENABLED" >> "$GITHUB_OUTPUT"
+
           if [ "$ENABLED" != "true" ]; then
             echo "PSI monitoring is not enabled. Skipping."
           fi
@@ -26,31 +39,63 @@ jobs:
         if: steps.check.outputs.enabled == 'true'
         id: psi
         run: |
-          SITE_URL="https://main--${{ vars.AEM_SITE }}--${{ vars.AEM_ORG }}.aem.live/"
-          ENCODED_URL=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${SITE_URL}', safe=''))")
-          RESULT=$(curl -s -H "x-auth-token: ${{ secrets.AEM_ADMIN_API_KEY }}" \
-            "https://admin.hlx.page/psi/${{ vars.AEM_ORG }}/${{ vars.AEM_SITE }}/main?url=${ENCODED_URL}")
-          echo "perf=$(echo "$RESULT" | jq '.lighthouseResult.categories.performance.score * 100 | round')" >> "$GITHUB_OUTPUT"
-          echo "a11y=$(echo "$RESULT" | jq '.lighthouseResult.categories.accessibility.score * 100 | round')" >> "$GITHUB_OUTPUT"
-          echo "bp=$(echo "$RESULT" | jq '.lighthouseResult.categories["best-practices"].score * 100 | round')" >> "$GITHUB_OUTPUT"
-          echo "seo=$(echo "$RESULT" | jq '.lighthouseResult.categories.seo.score * 100 | round')" >> "$GITHUB_OUTPUT"
+          SITE_URL="https://main--${AEM_SITE}--${AEM_ORG}.aem.live/"
+          ENCODED_URL=$(printf '%s' "$SITE_URL" | jq -sRr @uri)
+
+          echo "Testing: $SITE_URL"
+
+          RESULT=$(curl -s \
+            -H "x-auth-token: ${{ secrets.AEM_ADMIN_API_KEY }}" \
+            "https://admin.hlx.page/psi/${AEM_ORG}/${AEM_SITE}/main?url=${ENCODED_URL}")
+
+          echo "$RESULT" | jq '.lighthouseResult.categories | keys' 2>/dev/null || {
+            echo "::error::PSI request failed. Response: $RESULT"
+            exit 1
+          }
+
+          PERF=$(echo "$RESULT" | jq '.lighthouseResult.categories.performance.score * 100 | round')
+          A11Y=$(echo "$RESULT" | jq '.lighthouseResult.categories.accessibility.score * 100 | round')
+          BP=$(echo "$RESULT" | jq '.lighthouseResult.categories["best-practices"].score * 100 | round')
+          SEO=$(echo "$RESULT" | jq '.lighthouseResult.categories.seo.score * 100 | round')
+
+          echo "Performance: $PERF | Accessibility: $A11Y | Best Practices: $BP | SEO: $SEO"
+
+          echo "perf=$PERF" >> "$GITHUB_OUTPUT"
+          echo "a11y=$A11Y" >> "$GITHUB_OUTPUT"
+          echo "bp=$BP" >> "$GITHUB_OUTPUT"
+          echo "seo=$SEO" >> "$GITHUB_OUTPUT"
 
       - name: Write scores to public config
         if: steps.check.outputs.enabled == 'true' && steps.psi.outputs.perf != 'null'
         run: |
           NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          curl -s -X POST "https://admin.hlx.page/config/${{ vars.AEM_ORG }}/sites/${{ vars.AEM_SITE }}/public.json" \
-            -H "content-type: application/json" \
-            -H "x-auth-token: ${{ secrets.AEM_ADMIN_API_KEY }}" \
-            --data '{
-              "psi": {
-                "enabled": true,
-                "lastRun": "'"$NOW"'",
-                "scores": {
-                  "performance": ${{ steps.psi.outputs.perf }},
-                  "accessibility": ${{ steps.psi.outputs.a11y }},
-                  "best-practices": ${{ steps.psi.outputs.bp }},
-                  "seo": ${{ steps.psi.outputs.seo }}
+          PAYLOAD=$(jq -n \
+            --argjson perf "${{ steps.psi.outputs.perf }}" \
+            --argjson a11y "${{ steps.psi.outputs.a11y }}" \
+            --argjson bp "${{ steps.psi.outputs.bp }}" \
+            --argjson seo "${{ steps.psi.outputs.seo }}" \
+            --arg lastRun "$NOW" \
+            '{
+              psi: {
+                enabled: true,
+                lastRun: $lastRun,
+                scores: {
+                  performance: $perf,
+                  accessibility: $a11y,
+                  "best-practices": $bp,
+                  seo: $seo
                 }
               }
-            }'
+            }')
+
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "https://admin.hlx.page/config/${AEM_ORG}/sites/${AEM_SITE}/public.json" \
+            -H "content-type: application/json" \
+            -H "x-auth-token: ${{ secrets.AEM_ADMIN_API_KEY }}" \
+            --data "$PAYLOAD")
+
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "Scores written to public config (HTTP $HTTP_CODE)"
+          else
+            echo "::warning::Failed to write scores (HTTP $HTTP_CODE)"
+          fi
