@@ -23,32 +23,44 @@ jobs:
         if: steps.check.outputs.enabled == 'true'
         run: sleep 60
 
-      - uses: actions/checkout@v5
+      - name: Run PageSpeed Insights
         if: steps.check.outputs.enabled == 'true'
-
-      - name: Run Lighthouse
-        if: steps.check.outputs.enabled == 'true'
-        id: lighthouse
-        uses: treosh/lighthouse-ci-action@v12
-        with:
-          urls: "https://main--$AEM_SITE--$AEM_ORG.aem.live/"
-          runs: 1
-
-      - name: Write scores to public config
-        if: steps.check.outputs.enabled == 'true' && steps.lighthouse.outputs.manifest != ''
+        id: psi
         run: |
-          MANIFEST='${{ steps.lighthouse.outputs.manifest }}'
-          PERF=$(echo "$MANIFEST" | jq '.[0].summary.performance * 100 | round')
-          A11Y=$(echo "$MANIFEST" | jq '.[0].summary.accessibility * 100 | round')
-          BP=$(echo "$MANIFEST" | jq '.[0].summary["best-practices"] * 100 | round')
-          SEO=$(echo "$MANIFEST" | jq '.[0].summary.seo * 100 | round')
+          SITE_URL="https://main--${AEM_SITE}--${AEM_ORG}.aem.live/"
+          ENCODED_URL=$(printf '%s' "$SITE_URL" | jq -sRr @uri)
+          echo "Testing: $SITE_URL"
+
+          RESULT=$(curl -sf \
+            -H "x-auth-token: ${{ secrets.AEM_ADMIN_API_KEY }}" \
+            "https://admin.hlx.page/psi/${AEM_ORG}/${AEM_SITE}/main?url=${ENCODED_URL}")
+
+          if [ -z "$RESULT" ]; then
+            echo "::error::PSI request failed."
+            exit 1
+          fi
+
+          PERF=$(echo "$RESULT" | jq '.lighthouseResult.categories.performance.score * 100 | round')
+          A11Y=$(echo "$RESULT" | jq '.lighthouseResult.categories.accessibility.score * 100 | round')
+          BP=$(echo "$RESULT" | jq '.lighthouseResult.categories["best-practices"].score * 100 | round')
+          SEO=$(echo "$RESULT" | jq '.lighthouseResult.categories.seo.score * 100 | round')
 
           echo "Performance: $PERF | Accessibility: $A11Y | Best Practices: $BP | SEO: $SEO"
 
+          echo "perf=$PERF" >> "$GITHUB_OUTPUT"
+          echo "a11y=$A11Y" >> "$GITHUB_OUTPUT"
+          echo "bp=$BP" >> "$GITHUB_OUTPUT"
+          echo "seo=$SEO" >> "$GITHUB_OUTPUT"
+
+      - name: Write scores to public config
+        if: steps.check.outputs.enabled == 'true' && steps.psi.outputs.perf != 'null'
+        run: |
           NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           PAYLOAD=$(jq -n \
-            --argjson perf "$PERF" --argjson a11y "$A11Y" \
-            --argjson bp "$BP" --argjson seo "$SEO" \
+            --argjson perf "${{ steps.psi.outputs.perf }}" \
+            --argjson a11y "${{ steps.psi.outputs.a11y }}" \
+            --argjson bp "${{ steps.psi.outputs.bp }}" \
+            --argjson seo "${{ steps.psi.outputs.seo }}" \
             --arg lastRun "$NOW" \
             '{ psi: { enabled: true, lastRun: $lastRun, scores: { performance: $perf, accessibility: $a11y, "best-practices": $bp, seo: $seo } } }')
 
