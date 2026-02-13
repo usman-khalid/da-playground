@@ -1,0 +1,56 @@
+name: PSI on Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  psi:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if PSI monitoring is enabled
+        id: check
+        run: |
+          CONFIG=$(curl -s "https://main--${{ vars.AEM_SITE }}--${{ vars.AEM_ORG }}.aem.live/config.json" 2>/dev/null || echo "{}")
+          ENABLED=$(echo "$CONFIG" | jq -r '.psi.enabled // false')
+          echo "enabled=$ENABLED" >> "$GITHUB_OUTPUT"
+          if [ "$ENABLED" != "true" ]; then
+            echo "PSI monitoring is not enabled. Skipping."
+          fi
+
+      - name: Wait for code sync
+        if: steps.check.outputs.enabled == 'true'
+        run: sleep 60
+
+      - name: Run PageSpeed Insights
+        if: steps.check.outputs.enabled == 'true'
+        id: psi
+        run: |
+          SITE_URL="https://main--${{ vars.AEM_SITE }}--${{ vars.AEM_ORG }}.aem.live/"
+          ENCODED_URL=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${SITE_URL}', safe=''))")
+          RESULT=$(curl -s -H "x-auth-token: ${{ secrets.AEM_ADMIN_API_KEY }}" \
+            "https://admin.hlx.page/psi/${{ vars.AEM_ORG }}/${{ vars.AEM_SITE }}/main?url=${ENCODED_URL}")
+          echo "perf=$(echo "$RESULT" | jq '.lighthouseResult.categories.performance.score * 100 | round')" >> "$GITHUB_OUTPUT"
+          echo "a11y=$(echo "$RESULT" | jq '.lighthouseResult.categories.accessibility.score * 100 | round')" >> "$GITHUB_OUTPUT"
+          echo "bp=$(echo "$RESULT" | jq '.lighthouseResult.categories["best-practices"].score * 100 | round')" >> "$GITHUB_OUTPUT"
+          echo "seo=$(echo "$RESULT" | jq '.lighthouseResult.categories.seo.score * 100 | round')" >> "$GITHUB_OUTPUT"
+
+      - name: Write scores to public config
+        if: steps.check.outputs.enabled == 'true' && steps.psi.outputs.perf != 'null'
+        run: |
+          NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          curl -s -X POST "https://admin.hlx.page/config/${{ vars.AEM_ORG }}/sites/${{ vars.AEM_SITE }}/public.json" \
+            -H "content-type: application/json" \
+            -H "x-auth-token: ${{ secrets.AEM_ADMIN_API_KEY }}" \
+            --data '{
+              "psi": {
+                "enabled": true,
+                "lastRun": "'"$NOW"'",
+                "scores": {
+                  "performance": ${{ steps.psi.outputs.perf }},
+                  "accessibility": ${{ steps.psi.outputs.a11y }},
+                  "best-practices": ${{ steps.psi.outputs.bp }},
+                  "seo": ${{ steps.psi.outputs.seo }}
+                }
+              }
+            }'
