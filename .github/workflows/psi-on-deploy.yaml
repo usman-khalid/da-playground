@@ -28,12 +28,14 @@ jobs:
           ENCODED_URL=$(printf '%s' "$SITE_URL" | jq -sRr @uri)
           echo "Testing: $SITE_URL"
 
-          RESULT=$(curl -sf \
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
             -H "x-auth-token: ${{ secrets.AEM_ADMIN_API_KEY }}" \
             "https://admin.hlx.page/psi/usman-khalid/da-playground/main?url=${ENCODED_URL}")
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          RESULT=$(echo "$RESPONSE" | sed '$d')
 
-          if [ -z "$RESULT" ]; then
-            echo "::error::PSI request failed."
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "::error::PSI request failed (HTTP $HTTP_CODE): $RESULT"
             exit 1
           fi
 
