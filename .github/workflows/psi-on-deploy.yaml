@@ -16,6 +16,10 @@ jobs:
           echo "enabled=$ENABLED" >> "$GITHUB_OUTPUT"
           [ "$ENABLED" = "true" ] && echo "PSI monitoring is enabled." || echo "PSI monitoring is not enabled. Skipping."
 
+      - name: Wait for code sync
+        if: steps.check.outputs.enabled == 'true'
+        run: sleep 30
+
       - name: Run PageSpeed Insights
         if: steps.check.outputs.enabled == 'true'
         id: psi
