@@ -67,7 +67,7 @@ jobs:
             --argjson bp "${{ steps.psi.outputs.bp }}" \
             --argjson seo "${{ steps.psi.outputs.seo }}" \
             '{ timestamp: $ts, scores: { performance: $perf, accessibility: $a11y, "best-practices": $bp, seo: $seo } }')
-          curl -sf -X POST "https://psi-store.usman-khalid.workers.dev/psi/usman-khalid/da-playground" \
+          curl -sf -X POST "https://psi-store.aem-poc-lab.workers.dev/psi/usman-khalid/da-playground" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${{ secrets.PSI_STORE_TOKEN }}" \
             --data "$ENTRY"
