@@ -8,69 +8,8 @@ jobs:
   psi:
     runs-on: ubuntu-latest
     steps:
-      - name: Check if PSI monitoring is enabled
-        id: check
-        run: |
-          CONFIG=$(curl -sf "https://main--da-playground--usman-khalid.aem.live/config.json" || echo '{}')
-          ENABLED=$(echo "$CONFIG" | jq -r '.public.psi.enabled // false')
-          echo "enabled=$ENABLED" >> "$GITHUB_OUTPUT"
-          [ "$ENABLED" = "true" ] && echo "PSI monitoring is enabled." || echo "PSI monitoring is not enabled. Skipping."
-
-      - name: Wait for code sync
-        if: steps.check.outputs.enabled == 'true'
-        run: sleep 30
-
-      - name: Run PageSpeed Insights
-        if: steps.check.outputs.enabled == 'true'
-        id: psi
-        run: |
-          SITE_URL="https://main--da-playground--usman-khalid.aem.live/"
-          ENCODED_URL=$(printf '%s' "$SITE_URL" | jq -sRr @uri)
-          echo "Testing: $SITE_URL"
-
-          RESPONSE=$(curl -sL -w "\n%{http_code}" \
-            -H "x-auth-token: ${{ secrets.AEM_ADMIN_API_KEY }}" \
-            "https://admin.hlx.page/psi/usman-khalid/da-playground/main?url=${ENCODED_URL}")
-          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-          RESULT=$(echo "$RESPONSE" | sed '$d')
-
-          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
-            echo "::error::PSI request failed (HTTP $HTTP_CODE): $RESULT"
-            exit 1
-          fi
-
-          PERF=$(echo "$RESULT" | jq '.lighthouseResult.categories.performance.score // empty | . * 100 | round')
-          A11Y=$(echo "$RESULT" | jq '.lighthouseResult.categories.accessibility.score // empty | . * 100 | round')
-          BP=$(echo "$RESULT" | jq '.lighthouseResult.categories["best-practices"].score // empty | . * 100 | round')
-          SEO=$(echo "$RESULT" | jq '.lighthouseResult.categories.seo.score // empty | . * 100 | round')
-
-          echo "Performance: $PERF | Accessibility: $A11Y | Best Practices: $BP | SEO: $SEO"
-
-          if [ -z "$PERF" ] && [ -z "$A11Y" ] && [ -z "$BP" ] && [ -z "$SEO" ]; then
-            echo "::warning::Lighthouse returned no scores"
-            exit 0
-          fi
-
-          echo "perf=${PERF:-0}" >> "$GITHUB_OUTPUT"
-          echo "a11y=${A11Y:-0}" >> "$GITHUB_OUTPUT"
-          echo "bp=${BP:-0}" >> "$GITHUB_OUTPUT"
-          echo "seo=${SEO:-0}" >> "$GITHUB_OUTPUT"
-
-      - name: Save scores
-        if: steps.check.outputs.enabled == 'true' && steps.psi.outputs.perf
-        run: |
-          NOW_MS=$(date -u +%s)000
-          ENTRY=$(jq -n \
-            --argjson ts "$NOW_MS" \
-            --argjson perf "${{ steps.psi.outputs.perf }}" \
-            --argjson a11y "${{ steps.psi.outputs.a11y }}" \
-            --argjson bp "${{ steps.psi.outputs.bp }}" \
-            --argjson seo "${{ steps.psi.outputs.seo }}" \
-            '{ timestamp: $ts, scores: { performance: $perf, accessibility: $a11y, "best-practices": $bp, seo: $seo } }')
-          RESPONSE=$(curl -sL -w "\n%{http_code}" -X POST "https://psi-store.aem-poc-lab.workers.dev/psi/usman-khalid/da-playground" \
-            -H "Content-Type: application/json" \
-            --data "$ENTRY")
-          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-          BODY=$(echo "$RESPONSE" | sed '$d')
-          echo "Response ($HTTP_CODE): $BODY"
-          [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ] || exit 1
+      - uses: usman-khalid/aem-psi-action@v1
+        with:
+          org: usman-khalid
+          site: da-playground
+          admin-api-key: ${{ secrets.AEM_ADMIN_API_KEY }}
