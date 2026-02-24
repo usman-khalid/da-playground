@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: write
+
 jobs:
   psi:
     runs-on: ubuntu-latest
@@ -47,6 +50,7 @@ jobs:
           echo "Performance: $PERF | Accessibility: $A11Y | Best Practices: $BP | SEO: $SEO"
 
           if [ -z "$PERF" ] && [ -z "$A11Y" ] && [ -z "$BP" ] && [ -z "$SEO" ]; then
+            echo "::warning::Lighthouse returned no scores"
             echo "error=true" >> "$GITHUB_OUTPUT"
           else
             echo "perf=${PERF:-0}" >> "$GITHUB_OUTPUT"
@@ -55,34 +59,16 @@ jobs:
             echo "seo=${SEO:-0}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Write error to public config
-        if: steps.check.outputs.enabled == 'true' && steps.psi.outputs.error == 'true'
-        run: |
-          NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          NOW_MS=$(date -u +%s)000
-          CONFIG=$(curl -sf "https://main--da-playground--usman-khalid.aem.live/config.json" || echo '{}')
-          PREV_HISTORY=$(echo "$CONFIG" | jq '.public.psi.history // []')
+      - name: Checkout repo
+        if: steps.check.outputs.enabled == 'true' && steps.psi.outputs.error != 'true'
+        uses: actions/checkout@v4
 
-          PAYLOAD=$(jq -n \
-            --arg lastRun "$NOW" \
-            --argjson history "$PREV_HISTORY" \
-            '{ psi: { enabled: true, lastRun: $lastRun, error: "Lighthouse returned no scores", history: $history } }')
-
-          curl -sL -o /dev/null \
-            -X POST "https://admin.hlx.page/config/usman-khalid/sites/da-playground/public.json" \
-            -H "content-type: application/json" \
-            -H "x-auth-token: ${{ secrets.AEM_ADMIN_API_KEY }}" \
-            --data "$PAYLOAD"
-          echo "::warning::Lighthouse returned no scores. Error saved to public config."
-
-      - name: Write scores to public config
+      - name: Update PSI history
         if: steps.check.outputs.enabled == 'true' && steps.psi.outputs.error != 'true'
         run: |
-          NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          PREV='[]'
+          [ -f psi-history.json ] && PREV=$(cat psi-history.json)
           NOW_MS=$(date -u +%s)000
-          CONFIG=$(curl -sf "https://main--da-playground--usman-khalid.aem.live/config.json" || echo '{}')
-          PREV_HISTORY=$(echo "$CONFIG" | jq '.public.psi.history // []')
-
           NEW_ENTRY=$(jq -n \
             --argjson ts "$NOW_MS" \
             --argjson perf "${{ steps.psi.outputs.perf }}" \
@@ -90,24 +76,15 @@ jobs:
             --argjson bp "${{ steps.psi.outputs.bp }}" \
             --argjson seo "${{ steps.psi.outputs.seo }}" \
             '{ timestamp: $ts, scores: { performance: $perf, accessibility: $a11y, "best-practices": $bp, seo: $seo } }')
+          echo "$PREV" | jq --argjson entry "$NEW_ENTRY" \
+            '[$entry] + . | .[0:20]' > psi-history.json
 
-          HISTORY=$(echo "$PREV_HISTORY" | jq --argjson entry "$NEW_ENTRY" '[$entry] + . | .[0:20]')
-
-          PAYLOAD=$(jq -n \
-            --argjson perf "${{ steps.psi.outputs.perf }}" \
-            --argjson a11y "${{ steps.psi.outputs.a11y }}" \
-            --argjson bp "${{ steps.psi.outputs.bp }}" \
-            --argjson seo "${{ steps.psi.outputs.seo }}" \
-            --arg lastRun "$NOW" \
-            --argjson history "$HISTORY" \
-            '{ psi: { enabled: true, lastRun: $lastRun, error: null, scores: { performance: $perf, accessibility: $a11y, "best-practices": $bp, seo: $seo }, history: $history } }')
-
-          HTTP_CODE=$(curl -sL -o /dev/null -w "%{http_code}" \
-            -X POST "https://admin.hlx.page/config/usman-khalid/sites/da-playground/public.json" \
-            -H "content-type: application/json" \
-            -H "x-auth-token: ${{ secrets.AEM_ADMIN_API_KEY }}" \
-            --data "$PAYLOAD")
-
-          [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ] \
-            && echo "Scores saved (HTTP $HTTP_CODE)" \
-            || echo "::warning::Failed to save scores (HTTP $HTTP_CODE)"
+      - name: Commit PSI history
+        if: steps.check.outputs.enabled == 'true' && steps.psi.outputs.error != 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add psi-history.json
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "chore: update PSI scores [skip ci]"
+          git push
