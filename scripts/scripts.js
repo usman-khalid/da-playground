@@ -33,7 +33,7 @@ function buildHeroBlock(main) {
     main.prepend(section);
   }
 }
-dd
+
 /**
  * load fonts.css and set a session storage flag
  */
