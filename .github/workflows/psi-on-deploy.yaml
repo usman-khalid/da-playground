@@ -69,7 +69,6 @@ jobs:
             '{ timestamp: $ts, scores: { performance: $perf, accessibility: $a11y, "best-practices": $bp, seo: $seo } }')
           RESPONSE=$(curl -sL -w "\n%{http_code}" -X POST "https://psi-store.aem-poc-lab.workers.dev/psi/usman-khalid/da-playground" \
             -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${{ secrets.PSI_STORE_TOKEN }}" \
             --data "$ENTRY")
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
           BODY=$(echo "$RESPONSE" | sed '$d')
