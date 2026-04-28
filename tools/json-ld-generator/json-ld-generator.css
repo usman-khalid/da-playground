@@ -1,0 +1,58 @@
+body {
+  margin: 0;
+  font-family: 'Adobe Clean', adobe-clean, sans-serif;
+}
+
+.json-ld-generator {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.json-ld-generator h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.status,
+.note {
+  margin: 0;
+  font-size: 14px;
+}
+
+.note {
+  color: #b06000;
+}
+
+.status.error {
+  color: #b00020;
+}
+
+.preview {
+  margin: 0;
+  padding: 12px;
+  background: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  max-height: 60vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+button {
+  align-self: flex-start;
+  font-family: inherit;
+  font-size: 14px;
+  padding: 6px 14px;
+  cursor: pointer;
+  border: 0;
+  background: #0265dc;
+  color: #fff;
+  border-radius: 20px;
+}
