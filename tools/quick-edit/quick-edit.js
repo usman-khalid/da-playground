@@ -23,5 +23,7 @@ async function loadModule(origin, payload) {
 
 export default function init(payload) {
   addImportmap();
-  loadModule('https://da.live', payload);
+  const nx = new URLSearchParams(window.location.search).get('nx');
+  const origin = nx === 'local' ? 'http://localhost:6456' : 'https://da.live';
+  loadModule(origin, payload);
 }
