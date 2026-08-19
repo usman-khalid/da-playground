@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Disney Icon Selector</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <link rel="icon" href="data:,">
+    <script src="https://da.live/nx/utils/sdk.js" type="module"></script>
+    <script src="/tools/icon-selector/icon-selector.js" type="module"></script>
+    <link rel="stylesheet" href="/styles/fonts.css">
+    <link rel="stylesheet" href="/styles/icons.css">
+    <link rel="stylesheet" href="/tools/icon-selector/icon-selector.css">
+  </head>
+  <body>
+    <div class="icon-selector">
+      <div class="header">
+        <h1>Icon Library</h1>
+        <p>Search and select from the Disney icon library</p>
+      </div>
+      <div class="search-container">
+        <input type="text" id="searchInput" placeholder="Search icons..." class="search-input">
+        <div class="search-results-count" id="resultsCount"></div>
+      </div>
+      <div class="icons-container" id="iconsContainer"></div>
+      <div class="loading" id="loadingIndicator">
+        Loading icons...
+      </div>
+    </div>
+  </body>
+</html>
